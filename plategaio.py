@@ -1,158 +1,132 @@
+from datetime import datetime
 from typing import Optional, Any, Dict
-import requests
-from requests import Response
-from pydantic import BaseModel, Field, ValidationError, ConfigDict
-from uuid import UUID
-import datetime
+from uuid import UUID, uuid4
 
+import httpx
+from pydantic import BaseModel, Field, ConfigDict, ValidationError
 
 class PlategaError(Exception):
-    """base sdk error"""
+    """base SDK error"""
     pass
 
+class PlategaNetworkError(PlategaError):
+    """rraised on network-related issues, like timeout"""
+    pass
 
-class PlategaHTTPError(PlategaError):
-    """raised when API returns non-200 response"""
-    def __init__(self, status_code: int, message: str, response: Optional[Dict] = None):
-        super().__init__(f"HTTP {status_code}: {message}")
+class PlategaAPIError(PlategaError):
+    """raised when the API returns a non-200 response"""
+    def __init__(self, status_code: int, message: str, response_body: Optional[Dict] = None):
+        super().__init__(f"API Error {status_code}: {message}")
         self.status_code = status_code
         self.message = message
-        self.response = response
-
+        self.response_body = response_body
 
 class PaymentDetails(BaseModel):
     amount: float
     currency: str
 
-
 class CreateTransactionRequest(BaseModel):
-    paymentMethod: int
-    id: UUID
-    paymentDetails: PaymentDetails
+    payment_method: int = Field(..., alias="paymentMethod")
+    id: UUID = Field(default_factory=uuid4)
+    payment_details: PaymentDetails = Field(..., alias="paymentDetails")
     description: Optional[str] = None
-    return_url: Optional[str] = Field(None, alias="return")
-    failedUrl: Optional[str] = Field(None, alias="failedUrl")
+    return_url: Optional[str] = Field(None, alias="returnUrl")
+    failed_url: Optional[str] = Field(None, alias="failedUrl")
     payload: Optional[Any] = None
 
-    model_config = ConfigDict(validate_by_name=True, extra="allow")
-
-
 class CreateTransactionResponse(BaseModel):
-    paymentMethod: Optional[str]
-    transactionId: Optional[str]
-    redirect: Optional[str]
-    return_url: Optional[str] = Field(None, alias="return")
-    paymentDetails: Optional[str] = None
-    status: Optional[str] = None
-    expiresIn: Optional[str] = None
-    merchantId: Optional[str] = None
-    usdtRate: Optional[float] = None
+    model_config = ConfigDict(extra="ignore")
 
-    model_config = ConfigDict(validate_by_name=True, extra="allow")
-
+    transaction_id: str = Field(..., alias="transactionId")
+    redirect: str
+    status: str
+    expires_in: Optional[str] = Field(None, alias="expiresIn")
 
 class TransactionStatusResponse(BaseModel):
-    id: Optional[str]
-    status: Optional[str]
-    paymentDetails: Optional[Dict] = None
-    merchantName: Optional[str] = None
-    mechantId: Optional[str] = None
-    comission: Optional[float] = None
-    paymentMethod: Optional[str] = None
-    expiresIn: Optional[str] = None
-    accountData: Optional[str] = None
-    return_url: Optional[str] = Field(None, alias="return")
+    model_config = ConfigDict(extra="ignore")
 
-    model_config = ConfigDict(validate_by_name=True, extra="allow")
-
+    id: str
+    status: str
+    payment_details: Dict = Field(..., alias="paymentDetails")
+    payment_method: str = Field(..., alias="paymentMethod")
 
 class RateResponse(BaseModel):
-    paymentMethod: int
-    currencyFrom: str
-    currencyTo: str
+    model_config = ConfigDict(extra="ignore")
+
     rate: float
-    updatedAt: Optional[datetime.datetime] = None
+    updated_at: datetime = Field(..., alias="updatedAt")
 
-    model_config = ConfigDict(extra="allow")
-
-
-def _raise_for_response(resp: Response):
-    if not resp.ok:
-        try:
-            data = resp.json()
-            msg = data.get("message") or data
-        except Exception:
-            msg = resp.text or resp.reason
-        raise PlategaHTTPError(resp.status_code, str(msg), response=getattr(resp, "text", None))
-
-
-class PlategaClient:
+class PlategaAsyncClient:
     """
-    Platega SDK client.
+    async platega.io SDK client.
 
     Args:
         merchant_id (str): Merchant ID (X-MerchantId header).
         secret (str): API key (X-Secret header).
+        base_url (str): API base URL.
         timeout (int): Request timeout in seconds (default 15).
     """
-
-    BASE_URL = "https://app.platega.io"
-
-    def __init__(self, merchant_id: str, secret: str, timeout: int = 15):
+    def __init__(
+        self,
+        merchant_id: str,
+        secret: str,
+        base_url: str = "https://app.platega.io",
+        timeout: int = 15,
+    ):
         self.merchant_id = merchant_id
         self.secret = secret
-        self.timeout = timeout
-        self._session = requests.Session()
-        self._session.headers.update({
-            "X-MerchantId": str(self.merchant_id),
-            "X-Secret": str(self.secret),
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        })
+        self._session = httpx.AsyncClient(
+            base_url=base_url,
+            headers={
+                "X-MerchantId": str(self.merchant_id),
+                "X-Secret": str(self.secret),
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            timeout=timeout,
+        )
 
-    def create_transaction(self, payload: CreateTransactionRequest) -> CreateTransactionResponse:
-        """create new transaction"""
-        url = f"{self.BASE_URL}/transaction/process"
+    async def __aenter__(self) -> "PlategaAsyncClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        await self._session.aclose()
+
+    async def _request(self, method: str, path: str, **kwargs) -> Dict:
+        try:
+            response = await self._session.request(method, path, **kwargs)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            response_body = e.response.json()
+            msg = response_body.get("message", "unknown API error")
+            raise PlategaAPIError(e.response.status_code, msg, response_body) from e
+        except httpx.RequestError as e:
+            raise PlategaNetworkError(f"request failed: {e}") from e
+        except (ValueError, ValidationError) as e:
+            raise PlategaError(f"failed to parse API response: {e}") from e
+
+    async def create_transaction(self, payload: CreateTransactionRequest) -> CreateTransactionResponse:
         body = payload.model_dump(by_alias=True, exclude_none=True)
-        if isinstance(body.get("id"), UUID):
-            body["id"] = str(body["id"])
+        body["id"] = str(body["id"])
+        
+        data = await self._request("POST", "/transaction/process", json=body)
+        return CreateTransactionResponse.model_validate(data)
 
-        resp = self._session.post(url, json=body, timeout=self.timeout)
-        _raise_for_response(resp)
-        data = resp.json()
+    async def get_transaction_status(self, transaction_id: str) -> TransactionStatusResponse:
+        """fetch transaction status by its ID."""
+        data = await self._request("GET", f"/transaction/{transaction_id}")
+        return TransactionStatusResponse.model_validate(data)
 
-        try:
-            return CreateTransactionResponse.model_validate(data)
-        except ValidationError:
-            return CreateTransactionResponse(**data)
-
-    def get_transaction_status(self, transaction_id: str) -> TransactionStatusResponse:
-        """fetch transaction status by id"""
-        url = f"{self.BASE_URL}/transaction/{transaction_id}"
-        resp = self._session.get(url, timeout=self.timeout)
-        _raise_for_response(resp)
-        data = resp.json()
-
-        try:
-            return TransactionStatusResponse.model_validate(data)
-        except ValidationError:
-            return TransactionStatusResponse(**data)
-
-    def get_rate(self, payment_method: int, currency_from: str, currency_to: str, merchant_id: Optional[str] = None) -> RateResponse:
-        """get conversion rate for payment method"""
-        url = f"{self.BASE_URL}/rates/payment_method_rate"
+    async def get_rate(self, payment_method: int, currency_from: str, currency_to: str) -> RateResponse:
+        """get conversion rate for a payment method."""
         params = {
-            "merchantId": merchant_id or self.merchant_id,
             "paymentMethod": payment_method,
             "currencyFrom": currency_from,
             "currencyTo": currency_to,
         }
-
-        resp = self._session.get(url, params=params, timeout=self.timeout)
-        _raise_for_response(resp)
-        data = resp.json()
-
-        try:
-            return RateResponse.model_validate(data)
-        except ValidationError:
-            return RateResponse(**data)
+        data = await self._request("GET", "/rates/payment_method_rate", params=params)
+        return RateResponse.model_validate(data)
