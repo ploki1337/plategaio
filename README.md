@@ -1,7 +1,7 @@
 # 🟢 Platega Async SDK (Unofficial)
 
-[![PyPI](https://img.shields.io/pypi/v/plategaio-async.svg)](https://pypi.org/project/plategaio-async/)
-[![Python](https://img.shields.io/pypi/pyversions/plategaio-async.svg)](https://pypi.org/project/plategaio-async/)
+[![PyPI](https://img.shields.io/pypi/v/plategaio-async.svg)](https://pypi.org/project/plategaio/)
+[![Python](https://img.shields.io/pypi/pyversions/plategaio-async.svg)](https://pypi.org/project/plategaio/)
 [![License](https://img.shields.io/pypi/l/plategaio-async.svg)](https://github.com/ploki1337/plategaio/blob/main/LICENSE)
 
 > 🛠️ A modern, unofficial **asynchronous** Python SDK for the [Platega.io](https://platega.io) API.  
@@ -117,6 +117,7 @@ except PlategaNetworkError as e:
 
 ## 🌍 Links
 
--   📦 [PyPI](https://pypi.org/project/plategaio-async/)
+-   📦 [PyPI](https://pypi.org/project/plategaio/)
 -   💻 [Source Code](https://github.com/ploki1337/plategaio)
 -   🔗 [Platega.io](https://platega.io)
+
