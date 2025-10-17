@@ -24,7 +24,7 @@
 ## 📦 Installation
 
 ```bash
-pip install plategaio-async
+pip install plategaio
 ```
 
 ---
@@ -120,4 +120,3 @@ except PlategaNetworkError as e:
 -   📦 [PyPI](https://pypi.org/project/plategaio/)
 -   💻 [Source Code](https://github.com/ploki1337/plategaio)
 -   🔗 [Platega.io](https://platega.io)
-
