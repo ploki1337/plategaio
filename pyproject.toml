@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "plategaio"
-version = "1.0.2"
+version = "1.0.3"
 authors = [
   { name="ploki1337", email="ploki1337@gmail.com" },
 ]
@@ -36,6 +36,5 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/ploki1337/plategaio"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["plategaio*"]
+[tool.setuptools]
+py-modules = ["plategaio"]
