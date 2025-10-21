@@ -112,6 +112,8 @@ class PlategaAsyncClient:
     async def create_transaction(self, payload: CreateTransactionRequest) -> CreateTransactionResponse:
         body = payload.model_dump(by_alias=True, exclude_none=True)
         body["id"] = str(body["id"])
+        body["return"] = body["returnUrl"]
+        body["returnUrl"] = None
         
         data = await self._request("POST", "/transaction/process", json=body)
         return CreateTransactionResponse.model_validate(data)
@@ -130,3 +132,4 @@ class PlategaAsyncClient:
         }
         data = await self._request("GET", "/rates/payment_method_rate", params=params)
         return RateResponse.model_validate(data)
+
